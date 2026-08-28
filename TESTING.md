@@ -1,0 +1,14 @@
+# Hardware feedback checklist
+
+Build `examples/basic/testProgram`, open the 115200-baud monitor, enter a letter, then Enter.
+
+- Corner test A-D: report which labeled corner block is visible, clipped, displaced, or missing.
+- Vertical stripes E: report `V1..V8` from left to right and the observed color for each.
+- Horizontal stripes F: report `H1..H8` from top to bottom and the observed color for each.
+- Color/inversion tests: report the label and observed color, not only the raw hex value.
+- Rotation test: report orientation number and which edge/corner is incorrect.
+- Partial-update test: confirm the surrounding checkerboard remains unchanged.
+- Text overwrite test: confirm `123456789` becomes only `99` (no old characters).
+- Input tests: compare monitor event type, signed step count, and measured press duration.
+
+The program logs display dimensions and each operation result. Press `M` Enter to print the menu again.
