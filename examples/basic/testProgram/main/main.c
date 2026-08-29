@@ -33,20 +33,20 @@ static const char *names[] = {
     "BLACK"
 };
 
-static void menu(void)
+static void menu(uint8_t rotation)
 {
-    puts("\n=== TFT LCD DISPLAY EC11 TESTPROGRAM ===\n"
+    tft_ec11_text_style_t style = tft_ec11_get_text_style();
+    printf("\n=== TFT LCD DISPLAY EC11 TESTPROGRAM ===\n"
          "Letters A t/m Z, case insensitive, altijd afsluiten met [Enter]\n"
          "A-D  hoekblok linksboven/rechtsboven/linksonder/rechtsonder\n"
          "E    verticale kleurstroken V1-V8 (links naar rechts)\n"
          "F    horizontale kleurstroken H1-H8 (boven naar onder)\n"
          "G    kleur/inversie-referentie\n"
-         "H    rotatie volgende stand\n"
-         "I    achtergrondkleur instellen + clear\n"
-         "J    fontkleur en grootte 1\n"
+         "H    rotatie volgende stand (actueel %u)\n"
+         "I    achtergrondkleur instellen + clear (actueel %04X)\n"
+         "J    tekstinstellingen en tekst schrijven\n"
          "K    fontgrootte 2 en tekst\n"
          "L    tekstslot overwrite/no-wrap test\n"
-         "M    dit menu opnieuw tonen\n"
          "N    expliciete volledige refresh (framebuffer)\n"
          "O    partial-update test (omgeving moet gelijk blijven)\n"
          "P    inversion UIT\n"
@@ -59,7 +59,7 @@ static void menu(void)
          "W    extra-knop-events volgen (10 seconden)\n"
          "X    alle input-events volgen (30 seconden)\n"
          "Y    clipping/no-wrap rechterrand\n"
-         "Z    gecombineerde self-test\n");
+         "Z    gecombineerde self-test\n", rotation, style.background);
 }
 
 static bool read_line(char *line, size_t line_size)
@@ -72,12 +72,14 @@ static bool read_line(char *line, size_t line_size)
         ssize_t result = read(STDIN_FILENO, &character, 1);
 
         if (result == 1) {
-            if (character == '\r' || character == '\n') {
-                if (skip_lf && character == '\n') {
-                    skip_lf = false;
+            if (skip_lf) {
+                skip_lf = false;
+                if (character == '\n') {
                     continue;
                 }
+            }
 
+            if (character == '\r' || character == '\n') {
                 skip_lf = character == '\r';
                 write(STDOUT_FILENO, "\n", 1);
                 fsync(STDOUT_FILENO);
@@ -106,11 +108,18 @@ static bool read_line(char *line, size_t line_size)
 static void corner(int n)
 {
     int z = 40;
-    int x = (n & 1) ? tft_ec11_width() - z : 0;
-    int y = (n & 2) ? tft_ec11_height() - z : 0;
+    static const int positions[][2] = {
+        { 0, 0 },
+        { 0, 1 },
+        { 1, 0 },
+        { 1, 1 }
+    };
+    static const int color_indices[] = { 0, 1, 2, 3 };
+    int x = positions[n][0] ? tft_ec11_width() - z : 0;
+    int y = positions[n][1] ? tft_ec11_height() - z : 0;
 
-    tft_ec11_fill_rect(x, y, z, z, colors[n]);
-    printf("Hoek %c getekend op x=%d y=%d, verwacht %s\n", 'A' + n, x, y, names[n]);
+    tft_ec11_fill_rect(x, y, z, z, colors[color_indices[n]]);
+    printf("Hoek %c getekend op x=%d y=%d, verwacht %s\n", 'A' + n, x, y, names[color_indices[n]]);
 }
 
 static void stripes(bool vertical)
@@ -146,8 +155,12 @@ static void events(int seconds, int filter)
 
     while ((int32_t)(until - xTaskGetTickCount()) > 0) {
         if (tft_ec11_get_event(&e, pdMS_TO_TICKS(100)) && (filter < 0 || e.type == filter)) {
+            until = xTaskGetTickCount() + pdMS_TO_TICKS(seconds * 1000);
+
             if (e.type == TFT_EC11_EVENT_ROTATE) {
                 printf("ROTATE signed steps=%ld\n", (long)e.steps);
+            } else if (e.press == TFT_EC11_PRESS_DOWN) {
+                printf("%s pressed\n", e.type == TFT_EC11_EVENT_ENCODER_BUTTON ? "ENCODER_BUTTON" : "AUX_BUTTON");
             } else {
                 printf("%s press=%s duration=%lums\n",
                        e.type == TFT_EC11_EVENT_ENCODER_BUTTON ? "ENCODER_BUTTON" : "AUX_BUTTON",
@@ -207,15 +220,134 @@ static void text_overwrite(void)
     puts("Verwacht alleen 99; oude tekens gewist; geen wrapping");
 }
 
+static void text_settings_menu(void)
+{
+    static const uint16_t text_colors[] = {
+        TFT_EC11_WHITE, TFT_EC11_YELLOW, TFT_EC11_CYAN,
+        TFT_EC11_RED, TFT_EC11_GREEN
+    };
+    static const char *text_color_names[] = {
+        "WHITE", "YELLOW", "CYAN", "RED", "GREEN"
+    };
+    static const uint16_t background_colors[] = {
+        TFT_EC11_BLACK, TFT_EC11_BLUE, TFT_EC11_WHITE, TFT_EC11_YELLOW
+    };
+    static const char *background_names[] = {
+        "BLACK", "BLUE", "WHITE", "YELLOW"
+    };
+    static size_t text_color_index = 0;
+    static size_t background_index = 0;
+    static uint8_t font_scale = 1;
+    static int text_x = 0;
+    static int text_y = 0;
+    char line[64];
+
+    while (true) {
+        tft_ec11_text_style_t style = tft_ec11_get_text_style();
+        for (size_t i = 0; i < sizeof(background_colors) / sizeof(background_colors[0]); i++) {
+            if (background_colors[i] == style.background) {
+                background_index = i;
+                break;
+            }
+        }
+        for (size_t i = 0; i < sizeof(text_colors) / sizeof(text_colors[0]); i++) {
+            if (text_colors[i] == style.foreground) {
+                text_color_index = i;
+                break;
+            }
+        }
+         printf("\n1  background: %s\n"
+             "2  font size: %u\n"
+             "3  font color: %s\n"
+             "4  x-position: %d\n"
+             "5  y-position: %d\n"
+             "6  enter text\n"
+             "7  show selected settings\n"
+             "8  return to main menu\n",
+               background_names[background_index], style.font_scale,
+               text_color_names[text_color_index], text_x, text_y);
+        write(STDOUT_FILENO, "Text choice => ", 15);
+        fsync(STDOUT_FILENO);
+
+        if (!read_line(line, sizeof(line))) {
+            return;
+        }
+
+        char choice = 0;
+        for (char *p = line; *p; p++) {
+            if (isdigit((unsigned char)*p)) {
+                choice = *p;
+                break;
+            }
+        }
+
+        switch (choice) {
+        case '1':
+            background_index = (background_index + 1) % (sizeof(background_colors) / sizeof(background_colors[0]));
+            tft_ec11_set_background(background_colors[background_index]);
+            printf("Selected background: %s\n", background_names[background_index]);
+            break;
+        case '2':
+            font_scale = font_scale == 3 ? 1 : font_scale + 1;
+            tft_ec11_set_text_style(style.foreground, font_scale);
+            printf("Selected font size: %u\n", font_scale);
+            break;
+        case '3':
+            text_color_index = (text_color_index + 1) % (sizeof(text_colors) / sizeof(text_colors[0]));
+            tft_ec11_set_text_style(text_colors[text_color_index], font_scale);
+            printf("Selected foreground: %s\n", text_color_names[text_color_index]);
+            break;
+        case '4':
+        case '5': {
+            char position_choice = choice == '4' ? 'X' : 'Y';
+            int *coordinate = choice == '4' ? &text_x : &text_y;
+            int maximum = choice == '4' ? tft_ec11_width() - 1 : tft_ec11_height() - 1;
+            char prompt[16];
+            snprintf(prompt, sizeof(prompt), "%c-pos: ", position_choice);
+            write(STDOUT_FILENO, prompt, strlen(prompt));
+            fsync(STDOUT_FILENO);
+            if (read_line(line, sizeof(line))) {
+                int value = atoi(line);
+                if (value >= 0 && value <= maximum) {
+                    *coordinate = value;
+                } else {
+                    puts("Position outside the display");
+                }
+            }
+            break;
+        }
+        case '6': {
+            const char *prompt = "Enter text: ";
+            write(STDOUT_FILENO, prompt, strlen(prompt));
+            fsync(STDOUT_FILENO);
+            if (read_line(line, sizeof(line))) {
+                tft_ec11_draw_text_simple(text_x, text_y, line);
+            }
+            break;
+        }
+        case '7':
+            printf("Selected: background=%s size=%u foreground=%s x=%d y=%d\n",
+                   background_names[background_index], style.font_scale,
+                   text_color_names[text_color_index], text_x, text_y);
+            break;
+        case '8':
+            return;
+        default:
+            puts("Use 1, 2, 3, 4, 5, 6, 7, or 8");
+            break;
+        }
+    }
+}
+
 void app_main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     ESP_ERROR_CHECK(tft_ec11_init());
     ESP_ERROR_CHECK(tft_ec11_inputs_start(32));
-    menu();
 
     char line[64];
     uint8_t rotation = CONFIG_TFT_EC11_DEFAULT_ROTATION;
+    menu(rotation);
 
     while (true) {
         write(STDOUT_FILENO, "Choice => ", 10);
@@ -235,7 +367,7 @@ void app_main(void)
         }
 
         if (!c) {
-            puts("Voer A t/m Z in en druk Enter");
+            menu(rotation);
             continue;
         }
 
@@ -257,15 +389,27 @@ void app_main(void)
                 tft_ec11_set_rotation(rotation);
                 tft_ec11_clear();
                 printf("Rotatie %u, afmetingen %ux%u\n", rotation, tft_ec11_width(), tft_ec11_height());
+                menu(rotation);
                 break;
-            case 'I':
-                tft_ec11_set_background(TFT_EC11_BLUE);
+            case 'I': {
+                static const uint16_t background_colors[] = {
+                    TFT_EC11_BLACK, TFT_EC11_BLUE, TFT_EC11_WHITE, TFT_EC11_YELLOW
+                };
+                size_t current = 0;
+                tft_ec11_text_style_t style = tft_ec11_get_text_style();
+                for (size_t i = 0; i < sizeof(background_colors) / sizeof(background_colors[0]); i++) {
+                    if (background_colors[i] == style.background) {
+                        current = i;
+                        break;
+                    }
+                }
+                tft_ec11_set_background(background_colors[(current + 1) % (sizeof(background_colors) / sizeof(background_colors[0]))]);
                 tft_ec11_clear();
-                puts("Achtergrond BLUE");
+                printf("Achtergrond %04X\n", tft_ec11_get_text_style().background);
                 break;
+            }
             case 'J':
-                tft_ec11_set_text_style(TFT_EC11_YELLOW, 1);
-                tft_ec11_draw_text(5, 5, 30, "FONT YELLOW SIZE 1");
+                text_settings_menu();
                 break;
             case 'K':
                 tft_ec11_set_text_style(TFT_EC11_CYAN, 2);
@@ -273,9 +417,6 @@ void app_main(void)
                 break;
             case 'L':
                 text_overwrite();
-                break;
-            case 'M':
-                menu();
                 break;
             case 'N':
                 full_refresh();

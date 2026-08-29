@@ -24,6 +24,281 @@ after extracting the ZIP. The example directory can also be built as an independ
 Every menu choice is a letter A-Z (case-insensitive) followed by Enter. `M` redraws the menu.
 The visual tests print stable labels in the monitor, so observations can be reported without ambiguity.
 
+## Initializing the component
+
+Every application must call `tft_ec11_init()` before any other component function, and
+`tft_ec11_inputs_start()` before it can receive encoder/button events. A minimal `app_main()`
+looks like this:
+
+```c
+#include "esp32_s3_piggyback.h"
+#include "esp_log.h"
+
+void app_main(void)
+{
+    //-- Bring up SPI, GPIO, the ST7789 panel, and apply the Kconfig defaults (rotation, inversion)
+    ESP_ERROR_CHECK(tft_ec11_init());
+
+    //-- Start the encoder ISR and the button polling task; queue holds up to 32 pending events
+    ESP_ERROR_CHECK(tft_ec11_inputs_start(32));
+
+    tft_ec11_set_background(TFT_EC11_BLACK);
+    tft_ec11_set_text_style(TFT_EC11_WHITE, 1);
+    tft_ec11_clear();
+    tft_ec11_draw_text_simple(10, 10, "Ready");
+
+    tft_ec11_event_t event;
+
+    while (true)
+    {
+        if (tft_ec11_get_event(&event, portMAX_DELAY))
+        {
+            if (event.type == TFT_EC11_EVENT_ROTATE)
+            {
+                ESP_LOGI("app", "rotate steps=%ld", (long)event.steps);
+            }
+            else
+            {
+                ESP_LOGI("app", "button=%d press=%d duration=%lums",
+                          event.type, event.press, (unsigned long)event.duration_ms);
+            }
+        }
+    }
+}
+```
+
+## API Reference
+
+All functions are declared in `components/esp32_s3_piggyback/include/esp32_s3_piggyback.h`.
+
+### Lifecycle
+
+#### `esp_err_t tft_ec11_init(void)`
+
+Initializes the SPI bus, backlight GPIO, and the ST7789 panel driver. Applies the default
+rotation and inversion settings from Kconfig, turns the backlight on, and clears the screen.
+Must be called once before any other component function.
+
+```c
+ESP_ERROR_CHECK(tft_ec11_init());
+```
+
+#### `esp_err_t tft_ec11_deinit(void)`
+
+Stops input handling (equivalent to `tft_ec11_inputs_stop()`), turns off the backlight, and
+releases the panel, SPI bus, and DMA buffers.
+
+```c
+tft_ec11_deinit();
+```
+
+### Display properties
+
+#### `esp_err_t tft_ec11_set_rotation(uint8_t rotation)`
+
+Sets the display rotation (`0`-`3`). Swaps `tft_ec11_width()`/`tft_ec11_height()` for the
+odd rotations (`1` and `3`).
+
+```c
+tft_ec11_set_rotation(3);
+printf("Now %ux%u\n", tft_ec11_width(), tft_ec11_height());
+```
+
+#### `esp_err_t tft_ec11_set_inversion(bool enabled)`
+
+Turns the ST7789 color inversion on or off.
+
+```c
+tft_ec11_set_inversion(true);
+```
+
+#### `esp_err_t tft_ec11_set_backlight(bool enabled)`
+
+Switches the backlight GPIO on or off.
+
+```c
+tft_ec11_set_backlight(false);
+vTaskDelay(pdMS_TO_TICKS(1000));
+tft_ec11_set_backlight(true);
+```
+
+#### `uint16_t tft_ec11_width(void)` / `uint16_t tft_ec11_height(void)`
+
+Return the current logical display size in pixels, taking the active rotation into account.
+
+```c
+printf("Display is %u x %u\n", tft_ec11_width(), tft_ec11_height());
+```
+
+### Text style
+
+#### `void tft_ec11_set_background(uint16_t color)`
+
+Sets the global background color (RGB565), used by `tft_ec11_clear()` and by the text
+functions that use the global style.
+
+```c
+tft_ec11_set_background(TFT_EC11_BLUE);
+tft_ec11_clear();
+```
+
+#### `void tft_ec11_set_text_style(uint16_t foreground, uint8_t scale)`
+
+Sets the global foreground color and monospace font scale (`1`-`3`) used by
+`tft_ec11_draw_text_simple()` and `tft_ec11_draw_text()`.
+
+```c
+tft_ec11_set_text_style(TFT_EC11_YELLOW, 2);
+```
+
+#### `tft_ec11_text_style_t tft_ec11_get_text_style(void)`
+
+Returns the current global style (`background`, `foreground`, `font_scale`).
+
+```c
+tft_ec11_text_style_t style = tft_ec11_get_text_style();
+printf("bg=%04X fg=%04X scale=%u\n", style.background, style.foreground, style.font_scale);
+```
+
+### Drawing
+
+#### `esp_err_t tft_ec11_clear(void)`
+
+Fills the entire screen with the current global background color.
+
+```c
+tft_ec11_set_background(TFT_EC11_BLACK);
+tft_ec11_clear();
+```
+
+#### `esp_err_t tft_ec11_refresh(const uint16_t *frame_rgb565)`
+
+Pushes a full-screen framebuffer (`width * height` RGB565 pixels, row-major) to the panel in
+one call. Useful for pre-rendered or animated content.
+
+```c
+uint16_t *fb = malloc((size_t)tft_ec11_width() * tft_ec11_height() * sizeof(uint16_t));
+for (int i = 0; i < tft_ec11_width() * tft_ec11_height(); i++)
+{
+    fb[i] = TFT_EC11_GREEN;
+}
+tft_ec11_refresh(fb);
+free(fb);
+```
+
+#### `esp_err_t tft_ec11_fill_rect(int x, int y, int width, int height, uint16_t color)`
+
+Draws a solid rectangle, clipped to the screen bounds.
+
+```c
+tft_ec11_fill_rect(10, 10, 40, 40, TFT_EC11_RED);
+```
+
+#### `esp_err_t tft_ec11_draw_text_simple(int x, int y, const char *text)`
+
+Draws `text` at `(x, y)` using the current global style. The exact pixel area the text
+occupies is erased with the background color first, so redrawing shorter text at the same
+position never leaves stale characters behind.
+
+```c
+tft_ec11_set_text_style(TFT_EC11_WHITE, 1);
+tft_ec11_draw_text_simple(0, 0, "RPM: 12345");
+// later, overwrites the old text cleanly
+tft_ec11_draw_text_simple(0, 0, "RPM: 800");
+```
+
+#### `esp_err_t tft_ec11_draw_text_styled(int x, int y, const char *text, uint16_t background, uint8_t font_scale, uint16_t foreground)`
+
+Draws `text` with an explicit background, font scale, and foreground color for this single
+call, without changing the global style.
+
+```c
+tft_ec11_draw_text_styled(5, 30, "FONT CYAN SIZE 2", TFT_EC11_BLACK, 2, TFT_EC11_CYAN);
+```
+
+#### `esp_err_t tft_ec11_draw_text(int x, int y, size_t slot_chars, const char *text)`
+
+Draws `text` using the global style inside a fixed-width slot of `slot_chars` characters.
+The whole slot is cleared with the background color first, so it is safe for values whose
+length changes between updates, and text is clipped rather than wrapped past the slot.
+
+```c
+tft_ec11_set_text_style(TFT_EC11_WHITE, 2);
+tft_ec11_draw_text(10, 80, 12, "123456789");
+tft_ec11_draw_text(10, 80, 12, "99"); // clears the whole 12-character slot first
+```
+
+### Input events
+
+#### `esp_err_t tft_ec11_inputs_start(size_t queue_length)`
+
+Starts the encoder interrupt handler and the button-polling task, and creates the event
+queue (`queue_length` entries). Must be called before `tft_ec11_get_event()`.
+
+```c
+ESP_ERROR_CHECK(tft_ec11_inputs_start(32));
+```
+
+#### `void tft_ec11_inputs_stop(void)`
+
+Stops the button task, removes the encoder ISR handlers, and deletes the event queue.
+
+```c
+tft_ec11_inputs_stop();
+```
+
+#### `QueueHandle_t tft_ec11_event_queue(void)`
+
+Returns the raw FreeRTOS queue handle, for use with `xQueueReceive()` directly (for example
+inside a `select`-style wait on multiple queues).
+
+```c
+QueueHandle_t q = tft_ec11_event_queue();
+tft_ec11_event_t event;
+if (xQueueReceive(q, &event, pdMS_TO_TICKS(100)) == pdTRUE)
+{
+    // handle event
+}
+```
+
+#### `bool tft_ec11_get_event(tft_ec11_event_t *event, TickType_t wait)`
+
+Convenience wrapper that waits up to `wait` ticks for the next event and returns `true` if
+one was received. Use `portMAX_DELAY` to block indefinitely, or `0` to poll.
+
+```c
+tft_ec11_event_t event;
+
+if (tft_ec11_get_event(&event, pdMS_TO_TICKS(500)))
+{
+    if (event.type == TFT_EC11_EVENT_ROTATE)
+    {
+        printf("rotate %+ld\n", (long)event.steps);
+    }
+    else if (event.press == TFT_EC11_PRESS_DOWN)
+    {
+        printf("button pressed\n");
+    }
+    else if (event.press == TFT_EC11_PRESS_LONG)
+    {
+        printf("button held LONG (duration=%lums)\n", (unsigned long)event.duration_ms);
+    }
+}
+```
+
+`tft_ec11_event_t` fields:
+
+| Field         | Meaning                                                                 |
+|---------------|--------------------------------------------------------------------------|
+| `type`        | `TFT_EC11_EVENT_ROTATE`, `TFT_EC11_EVENT_ENCODER_BUTTON`, or `TFT_EC11_EVENT_AUX_BUTTON` |
+| `steps`       | Signed rotation step count (`TFT_EC11_EVENT_ROTATE` only)                |
+| `press`       | `TFT_EC11_PRESS_DOWN`, `_SHORT`, `_MEDIUM`, or `_LONG` (button events only) |
+| `duration_ms` | Elapsed press time in ms; `0` for `TFT_EC11_PRESS_DOWN`                  |
+
+`TFT_EC11_PRESS_DOWN` is reported immediately when a button is pressed. `TFT_EC11_PRESS_LONG`
+is reported as soon as the long-press threshold elapses, without waiting for release; `_SHORT`
+and `_MEDIUM` are reported on release, based on how long the button was held.
+
 ## Other examples
 
 - `examples/displayTest`: phase-1 low-level display diagnostics

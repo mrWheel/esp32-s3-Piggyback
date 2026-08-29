@@ -52,7 +52,7 @@ config TFT_EC11_DEFAULT_ROTATION
 
 config TFT_EC11_DEFAULT_INVERT
     bool "Enable ST7789 panel inversion"
-    default y
+    default n
 
 config TFT_EC11_BGR
     bool "Use BGR color order"

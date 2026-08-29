@@ -664,6 +664,41 @@ esp_err_t board_ui_set_text_color(uint16_t rgb565);
 esp_err_t board_ui_set_text_size(uint8_t size);
 ```
 
+For the current `tft_ec11_` API, the equivalent global state functions are:
+
+```c
+void tft_ec11_set_background(uint16_t color);
+void tft_ec11_set_text_style(uint16_t foreground, uint8_t font_scale);
+tft_ec11_text_style_t tft_ec11_get_text_style(void);
+```
+
+The built-in font is fixed-width monospace. Text drawing shall provide both a
+global-style function and a per-call-style function:
+
+```c
+esp_err_t tft_ec11_draw_text_simple(int x, int y, const char *text);
+esp_err_t tft_ec11_draw_text_styled(int x, int y, const char *text,
+									uint16_t background, uint8_t font_scale,
+									uint16_t foreground);
+```
+
+The simple function uses the current global background, font scale, and
+foreground. The styled function overrides all three values for that call.
+
+The basic example shall expose the global text state through a submenu. The
+submenu shall show the selected background color, monospace font size, font
+color, and x/y position after each change. It shall provide controls to cycle
+the three style values, enter x/y coordinates, and draw text through
+`tft_ec11_draw_text_simple()` so the global settings are used.
+
+Each submenu item shall be printed on its own line. The main menu shall show
+the current rotation value, and the default rotation shall be `3`.
+
+The main-menu `I` command shall cycle the global background color and show the
+current selected color in the menu. The `J` text-settings submenu shall use
+numeric choices, echo each typed character immediately, activate a choice only
+after Enter, and use explicit prompts `x-pos:`, `y-pos:`, and `Enter text:`.
+
 If multiple fonts are supported:
 
 ```c
