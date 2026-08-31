@@ -1295,6 +1295,45 @@ Do not make external font support a Phase 1 dependency.
 
 
 
+### Current font implementation (as built)
+
+This section documents the built-in font as actually implemented in
+`esp32_s3_piggyback_font.c` and `esp32_s3_piggyback.c`. Treat this as the
+current source of truth for font/character behavior.
+
+Character coverage:
+
+	●	fixed 5x7 pixel glyphs, monospace, scaled via the integer
+		`font_scale` text style value;
+	●	digits 0-9, letters A-Z (lowercase a-z is folded to uppercase before
+		lookup), space;
+	●	punctuation: `! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~`;
+	●	any other byte falls back to a generic placeholder glyph (a filled
+		box outline) instead of failing.
+
+Accented letters:
+
+	●	accented Latin-1 letters (e.g. À Á Â Ã Ä Å, È É Ê Ë, Ì Í Î Ï, Ñ,
+		Ò Ó Ô Õ Ö Ø, Ù Ú Û Ü, Ý and their lowercase equivalents) are folded
+		onto their unaccented base letter (e.g. á -> A) instead of being
+		drawn with a dedicated accent glyph;
+	●	letters without a defined base-letter mapping (e.g. æ, ß, ð, þ) are
+		not folded and render as the generic placeholder glyph.
+
+Text encoding:
+
+	●	text passed to the drawing API (`tft_ec11_draw_text*`) is UTF-8;
+	●	accented Latin-1 letters are encoded in UTF-8 as a 2-byte sequence
+		(lead byte `0xC2`/`0xC3`); the drawing code decodes such sequences
+		into a single Latin-1 code point before the font lookup runs;
+	●	other multi-byte UTF-8 sequences (3- and 4-byte) are not decoded and
+		render as the generic placeholder glyph, one glyph per lead byte;
+	●	the number of glyphs actually rendered (not the raw UTF-8 byte
+		length) determines the width of the region cleared/redrawn, so
+		accented text does not clear more background than necessary.
+
+
+
 Text replacement behavior
 
 This requirement is important enough to test explicitly.
