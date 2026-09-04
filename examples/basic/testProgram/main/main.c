@@ -10,6 +10,7 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 #include "esp32_s3_piggyback.h"
+#include "sd_card_test.h"
 
 static const uint16_t colors[] = {
     TFT_EC11_RED,
@@ -47,6 +48,7 @@ static void menu(uint8_t rotation)
          "J    tekstinstellingen en tekst schrijven\n"
          "K    fontgrootte 2 en tekst\n"
          "L    tekstslot overwrite/no-wrap test\n"
+         "M    SDcard submenu (init/format/write/append/read)\n"
          "N    expliciete volledige refresh (framebuffer)\n"
          "O    partial-update test (omgeving moet gelijk blijven)\n"
          "P    inversion UIT\n"
@@ -339,6 +341,75 @@ static void text_settings_menu(void)
     }
 }
 
+static void sd_card_menu(void)
+{
+    char line[128];
+
+    while (true) {
+        printf("\n=== SDcard === (%s)\n"
+             "1  Initialize SDcard\n"
+             "2  Format SDcard\n"
+             "3  Write Testfile\n"
+             "4  Append Testfile\n"
+             "5  Read TestFile\n"
+             "9  Return to main menu\n",
+             sd_card_test_is_present() ? "SDcard detected" : "No SDcard detected");
+        write(STDOUT_FILENO, "SDcard choice => ", 17);
+        fsync(STDOUT_FILENO);
+
+        if (!read_line(line, sizeof(line))) {
+            return;
+        }
+
+        char choice = 0;
+        for (char *p = line; *p; p++) {
+            if (isdigit((unsigned char)*p)) {
+                choice = *p;
+                break;
+            }
+        }
+
+        switch (choice) {
+        case '1':
+            if (sd_card_test_init() == ESP_OK) {
+                puts("SDcard initialized");
+            }
+            break;
+        case '2':
+            if (sd_card_test_format() == ESP_OK) {
+                puts("SDcard formatted");
+            }
+            break;
+        case '3': {
+            const char *prompt = "Enter text: ";
+            write(STDOUT_FILENO, prompt, strlen(prompt));
+            fsync(STDOUT_FILENO);
+            if (read_line(line, sizeof(line)) && sd_card_test_write(line) == ESP_OK) {
+                puts("Testfile written");
+            }
+            break;
+        }
+        case '4': {
+            const char *prompt = "Enter text: ";
+            write(STDOUT_FILENO, prompt, strlen(prompt));
+            fsync(STDOUT_FILENO);
+            if (read_line(line, sizeof(line)) && sd_card_test_append(line) == ESP_OK) {
+                puts("Testfile appended");
+            }
+            break;
+        }
+        case '5':
+            sd_card_test_read();
+            break;
+        case '9':
+            return;
+        default:
+            puts("Use 1, 2, 3, 4, 5, or 9");
+            break;
+        }
+    }
+}
+
 void app_main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -417,6 +488,9 @@ void app_main(void)
                 break;
             case 'L':
                 text_overwrite();
+                break;
+            case 'M':
+                sd_card_menu();
                 break;
             case 'N':
                 full_refresh();

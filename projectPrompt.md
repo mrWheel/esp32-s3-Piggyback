@@ -1446,6 +1446,35 @@ The example must clearly demonstrate that changing one field does not redraw the
 
 
 
+### SD card diagnostic submenu (as built, testProgram-only)
+
+`examples/basic/testProgram` also contains an SD card diagnostic submenu (main-menu key `M`,
+implemented in `sd_card_test.c`/`sd_card_test.h`). This is a deliberate, explicitly requested
+exception scoped to the test program only: SD card handling remains a non-goal of the reusable
+`esp32_s3_piggyback` component and is not exposed through its public header.
+
+Board SD card pins (SPI mode), as provided for this board revision:
+
+```text
+SD_DTCT  GPIO 7
+SD_CS    GPIO 13
+SD_SCLK  GPIO 14
+SD_MISO  GPIO 18
+SD_MOSI  GPIO 21
+```
+
+The SD card uses its own SPI bus (`SPI3_HOST`); the TFT panel keeps `SPI2_HOST`. Card presence is
+read directly from `SD_DTCT` (active-low, internal pull-up) and shown in the submenu header
+independently of whether the card has been mounted yet. Submenu operations: Initialize SDcard,
+Format SDcard, Write Testfile, Append Testfile, Read TestFile, Return to main menu.
+
+Because the repository root also builds the same test-program sources through its own
+`main/CMakeLists.txt` (for the VSCode ESP-IDF extension), any future change to this submenu's
+source files or component requirements must be mirrored into both
+`examples/basic/testProgram/main/CMakeLists.txt` and the root `main/CMakeLists.txt`.
+
+
+
 Test strategy
 
 Where hardware-independent logic exists, use unit tests where practical.

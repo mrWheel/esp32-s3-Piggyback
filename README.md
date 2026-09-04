@@ -21,7 +21,8 @@ idf.py build flash monitor
 The root project builds the same source as `examples/basic/testProgram`, so it is immediately useful
 after extracting the ZIP. The example directory can also be built as an independent ESP-IDF project.
 
-Every menu choice is a letter A-Z (case-insensitive) followed by Enter. `M` redraws the menu.
+Every menu choice is a letter A-Z (case-insensitive) followed by Enter. Pressing Enter on an
+empty line redraws the menu. `M` opens the SD card diagnostic submenu (see below).
 The visual tests print stable labels in the monitor, so observations can be reported without ambiguity.
 
 ## Initializing the component
@@ -299,11 +300,32 @@ if (tft_ec11_get_event(&event, pdMS_TO_TICKS(500)))
 is reported as soon as the long-press threshold elapses, without waiting for release; `_SHORT`
 and `_MEDIUM` are reported on release, based on how long the button was held.
 
+## SD card diagnostic submenu
+
+The interactive test program's `M` command opens a numbered SD card submenu
+(`examples/basic/testProgram/main/sd_card_test.c`). This is a test-program-only diagnostic; it is
+not part of the `esp32_s3_piggyback` component's public API, which deliberately excludes SD card
+support (see `projectPrompt.md`). It uses its own SPI bus (`SPI3_HOST`) so it does not conflict
+with the TFT panel's `SPI2_HOST`:
+
+```text
+SD_DTCT  GPIO 7
+SD_CS    GPIO 13
+SD_SCLK  GPIO 14
+SD_MISO  GPIO 18
+SD_MOSI  GPIO 21
+```
+
+The submenu header reports live card presence (`SDcard detected` / `No SDcard detected`) via
+`SD_DTCT`. Options: Initialize SDcard, Format SDcard, Write Testfile, Append Testfile,
+Read TestFile, Return to main menu.
+
 ## Other examples
 
 - `examples/displayTest`: phase-1 low-level display diagnostics
 - `examples/inputTest`: encoder and both push-button event diagnostics
-- `examples/basic/testProgram`: complete menu covering every public component operation
+- `examples/basic/testProgram`: complete menu covering every public component operation, plus the
+  SD card diagnostic submenu above
 
 See [projectPrompt.md](projectPrompt.md), [TESTING.md](TESTING.md), and the public API in
 `components/esp32_s3_piggyback/include/esp32_s3_piggyback.h`.
