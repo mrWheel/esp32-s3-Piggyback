@@ -324,6 +324,9 @@ Read TestFile, Return to main menu.
 
 - `examples/displayTest`: phase-1 low-level display diagnostics
 - `examples/inputTest`: encoder and both push-button event diagnostics
+- `examples/sdcardTest`: standalone SD card diagnostic, structured like the two examples above
+  (own `main/` project), independent of the `esp32_s3_piggyback` component. Same menu and pins as
+  the testProgram SD card diagnostic submenu above.
 - `examples/basic/testProgram`: complete menu covering every public component operation, plus the
   SD card diagnostic submenu above
 
