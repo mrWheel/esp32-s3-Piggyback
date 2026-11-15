@@ -38,8 +38,8 @@ messages, and example documentation must be written in English.
 - Use "//-- " for comments (2 slashes, 2 dashes).
 - Never use "/* .. */" for comments.
 - Place comments above the code they describe.
-- Use native ESP-IDF APIs only; no Arduino framework, no Adafruit_GFX/Adafruit_ST7789, no
-  PlatformIO.
+- Use native ESP-IDF APIs only; no Arduino framework, 
+  no Adafruit_GFX/Adafruit_ST7789, no PlatformIO.
 
 
 
@@ -151,6 +151,8 @@ esp32-s3-Piggyback/
 │       ├── include/
 │       │   └── esp32_s3_piggyback.h
 │       └── (implementation sources: display/ST7789 driving, built-in font, input handling)
+├── tools/
+│   └── font_check/                  host-side glyph coverage check for the three built-in faces
 └── examples/
     ├── displayTest/                 low-level display diagnostics
     ├── inputTest/                   encoder and push-button event diagnostics
@@ -228,6 +230,13 @@ the global style.
 style inside a fixed-width slot of `slot_chars` characters. The whole slot is cleared with the
 background color first, so it is safe for values whose length changes between updates.
 
+`tft_ec11_draw_text_font(int x, int y, const char *text, tft_ec11_font_t font, uint16_t background,
+uint16_t foreground)` draws using one of three native bitmap faces selected by `font`
+(`TFT_EC11_FONT_SMALL`, `TFT_EC11_FONT_MEDIUM`, `TFT_EC11_FONT_LARGE`) instead of a scale factor.
+Semantics mirror `tft_ec11_draw_text_styled()`: the cleared area is exactly
+(glyph count x advance width) x cell height, the advance includes the normal 1 px
+inter-character gap, and no glyph is ever interpolated, blended, or stretched.
+
 Invariants that apply to every drawing function:
 
 	●	text wrapping never occurs; text that does not fit is clipped at the right boundary,
@@ -276,7 +285,29 @@ independently configurable thresholds and use proper debounce handling.
 Documented here as the current source of truth for character/text behavior (implemented in
 `esp32_s3_piggyback_font.c` and `esp32_s3_piggyback.c`).
 
-Character coverage:
+Three native bitmap faces are available through `tft_ec11_draw_text_font()`; each face stores its
+own glyph bitmaps and is drawn pixel-accurate at its own size (never scaled, blended, or
+interpolated). All faces cover printable ASCII 32..126. Each face has one obvious row-access
+function in `esp32_s3_piggyback_font.c`:
+
+	●	SMALL  (5x7 glyph, 6x8 cell): `tft_ec11_font_row()` — the original procedural 5x7 font
+	  (procedural tables kept), exposed as a face; visuals identical to the legacy API at
+	  scale 1; lowercase folds to uppercase;
+	●	MEDIUM (7x12 glyph, 8x12 cell): `tft_ec11_font_medium_row()` — hand-tuned glyph data
+	  (not a stretched 5x7) with real descenders for g j p q y and comma/quotes/semicolon
+	  below the baseline, so text looks typeset;
+	●	LARGE  (8x16 glyph, 9x16 cell): `tft_ec11_font_large_row()` — the classic public-domain
+	  IBM VGA 8x16 ASCII font (row-major VGA8x16 data as shipped in the Linux kernel
+	  `lib/fonts/font_8x16.c`), with true descenders and full punctuation.
+
+The legacy scale-based API (`tft_ec11_draw_text_styled()` and friends) scales only the 5x7
+face and must keep producing pixel-identical output at scale 1 and 2.
+
+`tools/font_check/font_check.c` is a host-side coverage check: it compiles the font source with
+the host compiler and prints every glyph of every face for ASCII 32..126, failing if a face is
+missing pixels for a printable character.
+
+Legacy 5x7 character coverage (unchanged):
 
 	●	fixed 5x7 pixel glyphs, monospace, scaled via the integer `font_scale` text style value;
 	●	digits 0-9, letters A-Z (lowercase a-z folded to uppercase before lookup), space;

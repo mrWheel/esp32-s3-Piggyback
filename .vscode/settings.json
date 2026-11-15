@@ -6,5 +6,5 @@
         ".": true,
         "idf.py": true
     },
-    "idf.port": "/dev/tty.usbmodem14201"
+    "idf.port": "/dev/tty.usbmodem202401"
 }

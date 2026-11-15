@@ -68,6 +68,38 @@ void app_main(void)
 }
 ```
 
+## Font sizes
+
+There are three **native bitmap font sizes** (faces). Each face stores its own glyph bitmaps and is
+drawn pixel-accurate at its own size - glyphs are never scaled, stretched or interpolated. Pick the
+face with `tft_ec11_draw_text_font()`:
+
+| Face                 | Glyph | Character advance | Line height (cleared area) |
+|----------------------|-------|-------------------|----------------------------|
+| `TFT_EC11_FONT_SMALL`  | 5x7   | 6 px (1 px gap)   | 8 px                       |
+| `TFT_EC11_FONT_MEDIUM` | 7x12  | 8 px (1 px gap)   | 12 px                      |
+| `TFT_EC11_FONT_LARGE`  | 8x16  | 9 px (1 px gap)   | 16 px                      |
+
+```c
+// Small face:  5x7 glyphs, 6 px per character, 8 px tall
+tft_ec11_draw_text_font(10, 10, "Temp 21.5 C", TFT_EC11_FONT_SMALL, TFT_EC11_BLACK, TFT_EC11_WHITE);
+
+// Medium face: 7x12 glyphs, 8 px per character, 12 px tall
+tft_ec11_draw_text_font(10, 30, "Temp 21.5 C", TFT_EC11_FONT_MEDIUM, TFT_EC11_BLACK, TFT_EC11_WHITE);
+
+// Large face:  8x16 glyphs, 9 px per character, 16 px tall
+tft_ec11_draw_text_font(10, 60, "Temp 21.5 C", TFT_EC11_FONT_LARGE, TFT_EC11_BLACK, TFT_EC11_WHITE);
+```
+
+All three faces cover printable ASCII 32..126 (space..tilde), with real descenders (g j p q y , ;)
+in MEDIUM and LARGE. MEDIUM and LARGE draw lowercase as lowercase; SMALL folds lowercase to
+uppercase like the legacy API. Text is UTF-8; accented Latin-1 letters fold onto their base glyph,
+unknown bytes render as a hollow box.
+
+The `font_scale` (1-3) of `tft_ec11_set_text_style()` and `tft_ec11_draw_text_styled()` only
+integer-scales the 5x7 face. To get sizes in between without stretched strokes, use
+`tft_ec11_draw_text_font()` with `TFT_EC11_FONT_MEDIUM` or `TFT_EC11_FONT_LARGE` instead.
+
 ## API Reference
 
 All functions are declared in `components/esp32_s3_piggyback/include/esp32_s3_piggyback.h`.
@@ -227,6 +259,35 @@ length changes between updates, and text is clipped rather than wrapped past the
 tft_ec11_set_text_style(TFT_EC11_WHITE, 2);
 tft_ec11_draw_text(10, 80, 12, "123456789");
 tft_ec11_draw_text(10, 80, 12, "99"); // clears the whole 12-character slot first
+```
+
+#### `esp_err_t tft_ec11_draw_text_font(int x, int y, const char *text, tft_ec11_font_t font, uint16_t background, uint16_t foreground)`
+
+Draws `text` in one of three **native bitmap faces**. Each face stores its own glyph bitmaps and is
+drawn pixel-accurate at its own size; glyphs are never scaled, blended, or interpolated. The cleared
+area is exactly (glyph count × advance width) × cell height, and the advance includes the normal
+1 px inter-character gap. Text is UTF-8; accented Latin-1 letters fold onto their base glyph, and
+bytes without a dedicated glyph render as a hollow box (same rules as `tft_ec11_draw_text_styled()`).
+
+| Face | Glyph size | Cell (glyph + 1 px gap) | Notes |
+|------|------------|--------------------------|-------|
+| `TFT_EC11_FONT_SMALL` | 5x7 | 6x8 | the built-in 5x7 font, identical to the legacy API at scale 1; lowercase folds to uppercase |
+| `TFT_EC11_FONT_MEDIUM` | 7x12 | 8x12 | hand-tuned intermediate face with real descenders (g j p q y) and comma/quotes below the baseline |
+| `TFT_EC11_FONT_LARGE` | 8x16 | 9x16 | classic public-domain IBM VGA 8x16 ASCII font with true descenders and full punctuation |
+
+All three faces cover printable ASCII 32..126. The legacy `font_scale` API (`tft_ec11_set_text_style`,
+`tft_ec11_draw_text_styled`) keeps working unchanged and only ever scales the 5x7 face; use
+`tft_ec11_draw_text_font()` to get intermediate sizes without stretching.
+
+```c
+// Small face: 5x7 glyphs in a 6x8 cell
+tft_ec11_draw_text_font(10, 10, "Temp 21.5 C", TFT_EC11_FONT_SMALL, TFT_EC11_BLACK, TFT_EC11_WHITE);
+
+// Medium face: 7x12 glyphs in an 8x12 cell
+tft_ec11_draw_text_font(10, 30, "Temp 21.5 C", TFT_EC11_FONT_MEDIUM, TFT_EC11_BLACK, TFT_EC11_WHITE);
+
+// Large face: 8x16 glyphs in a 9x16 cell
+tft_ec11_draw_text_font(10, 60, "Temp 21.5 C", TFT_EC11_FONT_LARGE, TFT_EC11_BLACK, TFT_EC11_WHITE);
 ```
 
 ### Input events

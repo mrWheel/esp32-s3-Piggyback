@@ -222,6 +222,37 @@ static void text_overwrite(void)
     puts("Verwacht alleen 99; oude tekens gewist; geen wrapping");
 }
 
+//-- The four lines below together cover the complete printable ASCII range
+//-- (32..126); the font face option draws them with tft_ec11_draw_text_font
+//-- so glyph coverage can be checked on the display itself.
+static const char *font_sample_lines[] = {
+    " !\"#$%&'()*+,-./012345678",
+    ":;<=>?@ABCDEFGHIJKLMNO",
+    "PQRSTUVWXYZ[\\]^_`abcdefgh",
+    "ijklmnopqrstuvwxyz{|}~"
+};
+
+static const char *font_face_names[] = {
+    "SMALL (5x7 glyph, 6x8 cell)",
+    "MEDIUM (7x12 glyph, 8x12 cell)",
+    "LARGE (8x16 glyph, 9x16 cell)"
+};
+
+static const uint8_t font_face_cell_heights[] = { 8, 12, 16 };
+
+static void draw_font_sample(tft_ec11_font_t font)
+{
+    tft_ec11_text_style_t style = tft_ec11_get_text_style();
+    int cell_height = font_face_cell_heights[font];
+    int top = tft_ec11_height() - (int)(sizeof(font_sample_lines) / sizeof(font_sample_lines[0])) * cell_height;
+
+    for (size_t i = 0; i < sizeof(font_sample_lines) / sizeof(font_sample_lines[0]); i++)
+    {
+        tft_ec11_draw_text_font(0, top + (int)i * cell_height, font_sample_lines[i], font,
+                                style.background, style.foreground);
+    }
+}
+
 static void text_settings_menu(void)
 {
     static const uint16_t text_colors[] = {
@@ -240,6 +271,7 @@ static void text_settings_menu(void)
     static size_t text_color_index = 0;
     static size_t background_index = 0;
     static uint8_t font_scale = 1;
+    static tft_ec11_font_t font_face = TFT_EC11_FONT_SMALL;
     static int text_x = 0;
     static int text_y = 0;
     char line[64];
@@ -265,9 +297,11 @@ static void text_settings_menu(void)
              "5  y-position: %d\n"
              "6  enter text\n"
              "7  show selected settings\n"
-             "8  return to main menu\n",
+             "8  return to main menu\n"
+             "9  font face: %s (redraws full ASCII sample)\n",
                background_names[background_index], style.font_scale,
-               text_color_names[text_color_index], text_x, text_y);
+               text_color_names[text_color_index], text_x, text_y,
+               font_face_names[font_face]);
         write(STDOUT_FILENO, "Text choice => ", 15);
         fsync(STDOUT_FILENO);
 
@@ -323,7 +357,12 @@ static void text_settings_menu(void)
             write(STDOUT_FILENO, prompt, strlen(prompt));
             fsync(STDOUT_FILENO);
             if (read_line(line, sizeof(line))) {
-                tft_ec11_draw_text_simple(text_x, text_y, line);
+                if (font_face == TFT_EC11_FONT_SMALL) {
+                    tft_ec11_draw_text_simple(text_x, text_y, line);
+                } else {
+                    tft_ec11_draw_text_font(text_x, text_y, line, font_face,
+                                            style.background, style.foreground);
+                }
             }
             break;
         }
@@ -334,8 +373,13 @@ static void text_settings_menu(void)
             break;
         case '8':
             return;
+        case '9':
+            font_face = (font_face + 1) % (sizeof(font_face_names) / sizeof(font_face_names[0]));
+            printf("Font face: %s\n", font_face_names[font_face]);
+            draw_font_sample(font_face);
+            break;
         default:
-            puts("Use 1, 2, 3, 4, 5, 6, 7, or 8");
+            puts("Use 1, 2, 3, 4, 5, 6, 7, 8, or 9");
             break;
         }
     }

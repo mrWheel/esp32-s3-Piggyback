@@ -1,5 +1,7 @@
 build/
+.venv/
 sdkconfig
 sdkconfig.old
 dependencies.lock
 managed_components/
+.claude/

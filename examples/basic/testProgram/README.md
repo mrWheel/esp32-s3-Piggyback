@@ -9,6 +9,16 @@ numbered/color-named stripe positions. The serial output is the authoritative ma
 physical observations. P and Q intentionally toggle raw panel inversion so incorrect panel behavior can
 be diagnosed. The expected production setting is Q / INV ON.
 
+## Font faces submenu
+
+The `J` text-settings submenu has option `9`, which cycles the face used by `tft_ec11_draw_text_font()`:
+SMALL (5x7 glyph, 6x8 cell) -> MEDIUM (7x12, 8x12) -> LARGE (8x16, 9x16) -> SMALL. Every step redraws
+four sample lines at the bottom of the screen that together contain the complete printable ASCII range
+(32..126), so glyph coverage of the selected face can be verified on the display. Option `6` (enter text)
+draws the typed text with the selected face; with SMALL it uses the legacy scale-based path. The same
+coverage can be proven without hardware by compiling and running `tools/font_check/font_check.c`
+on the host (see [TESTING.md](../../../TESTING.md)).
+
 ## SDcard submenu
 
 Command M opens a numbered submenu (1-9, Enter to execute) that exercises the SD card slot on the
