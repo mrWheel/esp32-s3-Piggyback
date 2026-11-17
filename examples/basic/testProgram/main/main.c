@@ -222,34 +222,114 @@ static void text_overwrite(void)
     puts("Verwacht alleen 99; oude tekens gewist; geen wrapping");
 }
 
-//-- The four lines below together cover the complete printable ASCII range
-//-- (32..126); the font face option draws them with tft_ec11_draw_text_font
-//-- so glyph coverage can be checked on the display itself.
+//-- The first four lines together cover the complete printable ASCII range
+//-- (32..126) and the fifth line is a legibility sample for baseline,
+//-- descenders, punctuation, spacing and easy-to-confuse glyphs (0/O, 1/l/I,
+//-- 5/S); the font face option draws them with tft_ec11_draw_text_font so
+//-- glyph coverage can be checked on the display itself. Lines wider than
+//-- the screen are split into chunks and the chunks are paginated, so even
+//-- the 13x24 and 17x32 faces can be inspected without clipping.
 static const char *font_sample_lines[] = {
     " !\"#$%&'()*+,-./012345678",
     ":;<=>?@ABCDEFGHIJKLMNO",
     "PQRSTUVWXYZ[\\]^_`abcdefgh",
-    "ijklmnopqrstuvwxyz{|}~"
+    "ijklmnopqrstuvwxyz{|}~",
+    "0123456789 0O 1Il 5S gjpqy ,.:;!?"
 };
 
 static const char *font_face_names[] = {
-    "SMALL (5x7 glyph, 6x8 cell)",
-    "MEDIUM (7x12 glyph, 8x12 cell)",
-    "LARGE (8x16 glyph, 9x16 cell)"
+    "6x8 cell (5x7 glyph)",
+    "8x12 cell (7x12 glyph)",
+    "9x16 cell (8x16 glyph)",
+    "13x24 cell (12x24 glyph)",
+    "17x32 cell (16x32 glyph)"
 };
 
-static const uint8_t font_face_cell_heights[] = { 8, 12, 16 };
+static const uint8_t font_face_cell_heights[] = { 8, 12, 16, 24, 32 };
+static const uint8_t font_face_advances[] = { 6, 8, 9, 13, 17 };
+
+#define FONT_SAMPLE_MAX_SEGMENTS 32
 
 static void draw_font_sample(tft_ec11_font_t font)
 {
     tft_ec11_text_style_t style = tft_ec11_get_text_style();
-    int cell_height = font_face_cell_heights[font];
-    int top = tft_ec11_height() - (int)(sizeof(font_sample_lines) / sizeof(font_sample_lines[0])) * cell_height;
+    const int cell_height = font_face_cell_heights[font];
+    const int advance = font_face_advances[font];
+    const int screen_width = tft_ec11_width();
+    const int screen_height = tft_ec11_height();
+    const char *segment_text[FONT_SAMPLE_MAX_SEGMENTS];
+    int segment_length[FONT_SAMPLE_MAX_SEGMENTS];
+    int segment_count = 0;
+    int chars_per_chunk = screen_width / advance;
+    int rows_per_page = screen_height / cell_height;
 
-    for (size_t i = 0; i < sizeof(font_sample_lines) / sizeof(font_sample_lines[0]); i++)
-    {
-        tft_ec11_draw_text_font(0, top + (int)i * cell_height, font_sample_lines[i], font,
+    if (chars_per_chunk < 1) {
+        chars_per_chunk = 1;
+    }
+    if (rows_per_page < 1) {
+        rows_per_page = 1;
+    }
+
+    //-- Split every sample line into chunks that fit the screen width.
+    for (size_t line = 0; line < sizeof(font_sample_lines) / sizeof(font_sample_lines[0]); line++) {
+        const char *text = font_sample_lines[line];
+        int length = (int)strlen(text);
+        int offset = 0;
+        while (offset < length) {
+            int chunk = length - offset;
+            if (chunk > chars_per_chunk) {
+                chunk = chars_per_chunk;
+            }
+            if (segment_count < FONT_SAMPLE_MAX_SEGMENTS) {
+                segment_text[segment_count] = text + offset;
+                segment_length[segment_count] = chunk;
+                segment_count++;
+            }
+            offset += chunk;
+        }
+    }
+
+    const int page_count = (segment_count + rows_per_page - 1) / rows_per_page;
+    const int page_top = screen_height - rows_per_page * cell_height;
+    for (int page = 0; page < page_count; page++) {
+        //-- Clear the whole page area first so shorter rows never leave
+        //-- stale pixels from the previous page.
+        tft_ec11_fill_rect(0, page_top, screen_width, rows_per_page * cell_height, style.background);
+        for (int row = 0; row < rows_per_page; row++) {
+            int segment = page * rows_per_page + row;
+            char chunk[64];
+            if (segment >= segment_count) {
+                break;
+            }
+            memcpy(chunk, segment_text[segment], (size_t)segment_length[segment]);
+            chunk[segment_length[segment]] = '\0';
+            tft_ec11_draw_text_font(0, page_top + row * cell_height, chunk, font,
+                                    style.background, style.foreground);
+        }
+        if (page + 1 < page_count) {
+            char line[8];
+            printf("Pagina %d/%d - [Enter] voor volgende pagina\n", page + 1, page_count);
+            fflush(stdout);
+            if (!read_line(line, sizeof(line))) {
+                break;
+            }
+        }
+    }
+}
+
+//-- Standard overview screen: one line per native face, each drawn in its
+//-- own face, listing the cell matrix codes from top to bottom.
+static void draw_font_matrix_overview(void)
+{
+    static const char *matrix_names[] = { "6x8", "8x12", "9x16", "13x24", "17x32" };
+    tft_ec11_text_style_t style = tft_ec11_get_text_style();
+    int y = 0;
+
+    tft_ec11_clear();
+    for (size_t i = 0; i < sizeof(matrix_names) / sizeof(matrix_names[0]); i++) {
+        tft_ec11_draw_text_font(0, y, matrix_names[i], (tft_ec11_font_t)i,
                                 style.background, style.foreground);
+        y += font_face_cell_heights[i];
     }
 }
 
@@ -271,7 +351,7 @@ static void text_settings_menu(void)
     static size_t text_color_index = 0;
     static size_t background_index = 0;
     static uint8_t font_scale = 1;
-    static tft_ec11_font_t font_face = TFT_EC11_FONT_SMALL;
+    static tft_ec11_font_t font_face = TFT_EC11_FONT_6x8;
     static int text_x = 0;
     static int text_y = 0;
     char line[64];
@@ -290,7 +370,8 @@ static void text_settings_menu(void)
                 break;
             }
         }
-         printf("\n1  background: %s\n"
+         printf("\n0  standaardoverzicht matrixgroottes (alle faces)\n"
+             "1  background: %s\n"
              "2  font size: %u\n"
              "3  font color: %s\n"
              "4  x-position: %d\n"
@@ -357,7 +438,7 @@ static void text_settings_menu(void)
             write(STDOUT_FILENO, prompt, strlen(prompt));
             fsync(STDOUT_FILENO);
             if (read_line(line, sizeof(line))) {
-                if (font_face == TFT_EC11_FONT_SMALL) {
+                if (font_face == TFT_EC11_FONT_6x8) {
                     tft_ec11_draw_text_simple(text_x, text_y, line);
                 } else {
                     tft_ec11_draw_text_font(text_x, text_y, line, font_face,
@@ -371,6 +452,10 @@ static void text_settings_menu(void)
                    background_names[background_index], style.font_scale,
                    text_color_names[text_color_index], text_x, text_y);
             break;
+        case '0':
+            draw_font_matrix_overview();
+            puts("Standaardoverzicht: matrixcodes van boven naar beneden, elke regel in zijn eigen face");
+            break;
         case '8':
             return;
         case '9':
@@ -379,7 +464,7 @@ static void text_settings_menu(void)
             draw_font_sample(font_face);
             break;
         default:
-            puts("Use 1, 2, 3, 4, 5, 6, 7, 8, or 9");
+            puts("Use 0, 1, 2, 3, 4, 5, 6, 7, 8, or 9");
             break;
         }
     }

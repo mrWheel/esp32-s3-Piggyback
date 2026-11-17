@@ -152,7 +152,8 @@ esp32-s3-Piggyback/
 │       │   └── esp32_s3_piggyback.h
 │       └── (implementation sources: display/ST7789 driving, built-in font, input handling)
 ├── tools/
-│   └── font_check/                  host-side glyph coverage check for the three built-in faces
+│   ├── font_check/                  host-side glyph coverage check for the five built-in faces
+│   └── font_gen/                    development-machine regeneration of the 13x24/17x32 tables
 └── examples/
     ├── displayTest/                 low-level display diagnostics
     ├── inputTest/                   encoder and push-button event diagnostics
@@ -231,8 +232,11 @@ style inside a fixed-width slot of `slot_chars` characters. The whole slot is cl
 background color first, so it is safe for values whose length changes between updates.
 
 `tft_ec11_draw_text_font(int x, int y, const char *text, tft_ec11_font_t font, uint16_t background,
-uint16_t foreground)` draws using one of three native bitmap faces selected by `font`
-(`TFT_EC11_FONT_SMALL`, `TFT_EC11_FONT_MEDIUM`, `TFT_EC11_FONT_LARGE`) instead of a scale factor.
+uint16_t foreground)` draws using one of five native bitmap faces selected by `font`
+(preferred cell-matrix names `TFT_EC11_FONT_6x8`, `TFT_EC11_FONT_8x12`, `TFT_EC11_FONT_9x16`,
+`TFT_EC11_FONT_13x24`, `TFT_EC11_FONT_17x32`; the legacy aliases `TFT_EC11_FONT_SMALL`,
+`TFT_EC11_FONT_MEDIUM`, `TFT_EC11_FONT_LARGE` and the long forms `TFT_EC11_FONT_XLARGE`,
+`TFT_EC11_FONT_XXLARGE` map to the same values and must keep working) instead of a scale factor.
 Semantics mirror `tft_ec11_draw_text_styled()`: the cleared area is exactly
 (glyph count x advance width) x cell height, the advance includes the normal 1 px
 inter-character gap, and no glyph is ever interpolated, blended, or stretched.
@@ -285,7 +289,7 @@ independently configurable thresholds and use proper debounce handling.
 Documented here as the current source of truth for character/text behavior (implemented in
 `esp32_s3_piggyback_font.c` and `esp32_s3_piggyback.c`).
 
-Three native bitmap faces are available through `tft_ec11_draw_text_font()`; each face stores its
+Five native bitmap faces are available through `tft_ec11_draw_text_font()`; each face stores its
 own glyph bitmaps and is drawn pixel-accurate at its own size (never scaled, blended, or
 interpolated). All faces cover printable ASCII 32..126. Each face has one obvious row-access
 function in `esp32_s3_piggyback_font.c`:
@@ -296,9 +300,26 @@ function in `esp32_s3_piggyback_font.c`:
 	●	MEDIUM (7x12 glyph, 8x12 cell): `tft_ec11_font_medium_row()` — hand-tuned glyph data
 	  (not a stretched 5x7) with real descenders for g j p q y and comma/quotes/semicolon
 	  below the baseline, so text looks typeset;
-	●	LARGE  (8x16 glyph, 9x16 cell): `tft_ec11_font_large_row()` — the classic public-domain
-	  IBM VGA 8x16 ASCII font (row-major VGA8x16 data as shipped in the Linux kernel
-	  `lib/fonts/font_8x16.c`), with true descenders and full punctuation.
+	●	LARGE  (8x16 glyph, 9x16 cell; alias of `TFT_EC11_FONT_9x16`): `tft_ec11_font_large_row()`
+	  — the classic public-domain IBM VGA 8x16 ASCII font (row-major VGA8x16 data as shipped in
+	  the Linux kernel `lib/fonts/font_8x16.c`), with true descenders and full punctuation;
+	●	XLARGE (12x24 glyph, 13x24 cell; `TFT_EC11_FONT_13x24`): `tft_ec11_font_xlarge_row()` —
+	  generated static const uint16_t table (one uint16_t per glyph row, 4,560 bytes) from the
+	  native Terminus bold 12x24 BDF bitmaps (bold to match the 9x16 face's stroke weight);
+	●	XXLARGE (16x32 glyph, 17x32 cell; `TFT_EC11_FONT_17x32`): `tft_ec11_font_xxlarge_row()` —
+	  generated static const uint16_t table (one uint16_t per glyph row, 6,080 bytes) from the
+	  native Terminus 16x32 BDF bitmaps.
+
+Faces are named after their character cell (matrix); callers should prefer the
+`TFT_EC11_FONT_<matrix>` names (`6x8`, `8x12`, `9x16`, `13x24`, `17x32`). The legacy size names
+`TFT_EC11_FONT_SMALL`/`MEDIUM`/`LARGE` and the long forms `TFT_EC11_FONT_XLARGE`/`XXLARGE` remain
+available as enum aliases for backwards compatibility.
+
+The 13x24/17x32 tables are generated on the development machine (not on the target) from
+terminus-font 4.49 (ter-u24b.bdf bold / ter-u32n.bdf regular, Copyright (C) 2020 Dimitar Toshkov Zhekov, SIL
+Open Font License 1.1, license text in `components/esp32_s3_piggyback/TERMINUS-OFL-1.1.txt`) using
+`tools/font_gen/generate_fonts.py` (see the script header for the exact command); the ESP32-S3
+only reads the generated bitmaps.
 
 The legacy scale-based API (`tft_ec11_draw_text_styled()` and friends) scales only the 5x7
 face and must keep producing pixel-identical output at scale 1 and 2.

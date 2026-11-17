@@ -15,6 +15,8 @@
 uint8_t tft_ec11_font_row(unsigned char c, uint8_t row);
 uint8_t tft_ec11_font_medium_row(unsigned char c, uint8_t row);
 uint8_t tft_ec11_font_large_row(unsigned char c, uint8_t row);
+uint16_t tft_ec11_font_xlarge_row(unsigned char c, uint8_t row);
+uint16_t tft_ec11_font_xxlarge_row(unsigned char c, uint8_t row);
 
 static esp_lcd_panel_io_handle_t s_io;
 static esp_lcd_panel_handle_t s_panel;
@@ -210,23 +212,27 @@ esp_err_t tft_ec11_draw_text(int x, int y, size_t slots, const char *text)
 //-- Glyph size comes from its own bitmap (never scaled); advance is the
 //-- glyph width plus the normal 1 px inter-character gap; cell_height is
 //-- the height of the area cleared before drawing.
-static const uint8_t s_face_glyph_width[] = { 5, 7, 8 };
-static const uint8_t s_face_glyph_rows[] = { 7, 12, 16 };
-static const uint8_t s_face_advance[] = { 6, 8, 9 };
-static const uint8_t s_face_cell_height[] = { 8, 12, 16 };
-static const uint8_t s_face_left_pixel_bit[] = { 1 << 4, 1 << 6, 1 << 7 };
+static const uint8_t s_face_glyph_width[] = { 5, 7, 8, 12, 16 };
+static const uint8_t s_face_glyph_rows[] = { 7, 12, 16, 24, 32 };
+static const uint8_t s_face_advance[] = { 6, 8, 9, 13, 17 };
+static const uint8_t s_face_cell_height[] = { 8, 12, 16, 24, 32 };
+static const uint16_t s_face_left_pixel_bit[] = { 1 << 4, 1 << 6, 1 << 7, 1 << 15, 1 << 15 };
 
 //-- One row of a glyph of the selected face; every row access function
 //-- returns its bits with the leftmost glyph pixel at
 //-- s_face_left_pixel_bit[face].
-static uint8_t font_face_row(tft_ec11_font_t font, unsigned char character, uint8_t row)
+static uint16_t font_face_row(tft_ec11_font_t font, unsigned char character, uint8_t row)
 {
     switch (font)
     {
-    case TFT_EC11_FONT_MEDIUM:
+    case TFT_EC11_FONT_8x12:
         return tft_ec11_font_medium_row(character, row);
-    case TFT_EC11_FONT_LARGE:
+    case TFT_EC11_FONT_9x16:
         return tft_ec11_font_large_row(character, row);
+    case TFT_EC11_FONT_13x24:
+        return tft_ec11_font_xlarge_row(character, row);
+    case TFT_EC11_FONT_17x32:
+        return tft_ec11_font_xxlarge_row(character, row);
     default:
         return tft_ec11_font_row(character, row);
     }
@@ -236,12 +242,12 @@ static esp_err_t draw_text_with_font(int x, int y, size_t slots, const char *tex
                                      tft_ec11_font_t font, uint16_t background,
                                      uint16_t foreground)
 {
-    if (!text || !slots || font > TFT_EC11_FONT_LARGE) {
+    if (!text || !slots || (unsigned)font > (unsigned)TFT_EC11_FONT_17x32) {
         return ESP_ERR_INVALID_ARG;
     }
     const int advance = s_face_advance[font];
     const int glyph_width = s_face_glyph_width[font];
-    const uint8_t left_bit = s_face_left_pixel_bit[font];
+    const uint16_t left_bit = s_face_left_pixel_bit[font];
     ESP_RETURN_ON_ERROR(draw_pixels(x, y, (int)slots * advance, s_face_cell_height[font], background),
                         TAG, "text clear");
     size_t byte_index = 0, glyph_index = 0;
@@ -250,7 +256,7 @@ static esp_err_t draw_text_with_font(int x, int y, size_t slots, const char *tex
         unsigned char character = decode_next_character(text, &byte_index);
         for (int row = 0; row < s_face_glyph_rows[font]; row++)
         {
-            uint8_t bits = font_face_row(font, character, row);
+            uint16_t bits = font_face_row(font, character, row);
             int col = 0;
             while (col < glyph_width)
             {

@@ -10,10 +10,13 @@ Build `examples/basic/testProgram`, open the 115200-baud monitor, enter a letter
 - Partial-update test: confirm the surrounding checkerboard remains unchanged.
 - Text overwrite test: confirm `123456789` becomes only `99` (no old characters).
 - Font faces test: in the `J` text-settings submenu, press `9` Enter repeatedly to cycle
-  SMALL (6x8 cell) -> MEDIUM (8x12) -> LARGE (9x16). Each step must redraw the four full-ASCII
-  sample lines (32..126) at the bottom of the screen in the selected face: 1 px strokes, no doubled
-  or ragged lines, `g j p q y` and `, ; _` descending below the text baseline in MEDIUM and LARGE,
-  and unknown bytes as hollow boxes. Then use `6` to draw your own text in the selected face.
+  the five faces 6x8 -> 8x12 -> 9x16 -> 13x24 -> 17x32 (all cells include the 1 px gap). Each step
+  must redraw the full-ASCII sample lines (32..126) plus the legibility sample
+  `0123456789 0O 1Il 5S gjpqy ,.:;!?` at the bottom of the screen in the selected face, splitting
+  wide lines into chunks and pages (Enter for the next page) so nothing is clipped on 320x240:
+  1 px strokes, no doubled or ragged lines, `g j p q y` and `, ; _` descending below the text
+  baseline in the 8x12 face and larger, clearly distinct `0`/`O`, `1`/`l`/`I` and `5`/`S`, and
+  unknown bytes as hollow boxes. Then use `6` to draw your own text in the selected face.
   Glyph coverage is also provable without hardware via the host check
   `tools/font_check/font_check.c` (prints every glyph of every face; must report
   `FONT CHECK OK`).
